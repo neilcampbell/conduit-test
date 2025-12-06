@@ -69,21 +69,6 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          tags: ${{ env.IMAGE_NAME }}:${{ needs.get-next-version.outputs.version }}
-          labels: |
-            org.opencontainers.image.version=${{ needs.get-next-version.outputs.version }}
-            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.source=${{ github.repositoryUrl }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
       
       - name: Generate Docker tags
         id: docker-tags
@@ -104,7 +89,7 @@ jobs:
 
           echo "tags=${TAGS}" >> $GITHUB_OUTPUT
       
-      - name: Push Docker image to Docker Hub
+      - name: Build and Push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -116,6 +101,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.repositoryUrl }}
           cache-from: type=gha
+          cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
 
   release:
