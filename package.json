@@ -7,6 +7,7 @@
   "author": "Algorand foundation",
   "license": "MIT",
   "devDependencies": {
+    "@semantic-release/exec": "^7.1.0",
     "conventional-changelog-conventionalcommits": "^9.1.0",
     "semantic-release": "^25.0.2"
   }
