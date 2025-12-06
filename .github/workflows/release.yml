@@ -15,7 +15,7 @@ permissions:
   packages: write
 
 env:
-  IMAGE_NAME: ghcr.io/makerxstudio/conduit-localnet
+  IMAGE_NAME: ghcr.io/neilcampbell/conduit-localnet
 
 jobs:
   get-next-version:
