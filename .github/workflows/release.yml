@@ -22,8 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get-next-version.outputs.new-release-version }}
-      major: ${{ steps.parse-version.outputs.major }}
-      minor: ${{ steps.parse-version.outputs.minor }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -46,14 +44,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Parse version components
-        id: parse-version
+      - name: Debug outputs
         run: |
-          VERSION="${{ steps.get-next-version.outputs.new-release-version }}"
-          MAJOR=$(echo "$VERSION" | cut -d. -f1)
-          MINOR=$(echo "$VERSION" | cut -d. -f2)
-          echo "major=${MAJOR}" >> $GITHUB_OUTPUT
-          echo "minor=${MINOR}" >> $GITHUB_OUTPUT
+          echo "Version: ${{ steps.get-next-version.outputs.new-release-version }}"
 
   publish:
     name: Publish to Docker Hub
@@ -94,8 +87,6 @@ jobs:
         id: docker-tags
         run: |
           VERSION="${{ needs.get-next-version.outputs.version }}"
-          MAJOR="${{ needs.get-next-version.outputs.major }}"
-          MINOR="${{ needs.get-next-version.outputs.minor }}"
 
           TAGS="${{ env.IMAGE_NAME }}:${VERSION}"
           echo "Tags to publish:"
