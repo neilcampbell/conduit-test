@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE_NAME: algorandfoundation/conduit-localnet
+  IMAGE_NAME: neilcampbell/conduit-localnet
 
 jobs:
   build:

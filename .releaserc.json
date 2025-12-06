@@ -59,7 +59,7 @@
     [
       "@semantic-release/github",
       {
-        "releaseBodyTemplate": "<%= nextRelease.notes %><% if (!nextRelease.version.includes('-')) { %>\n\n## Docker\n\n```\ndocker pull algorandfoundation/conduit-localnet:<%= nextRelease.version %>\n```<% } %>"
+        "releaseBodyTemplate": "<%= nextRelease.notes %><% if (!nextRelease.version.includes('-')) { %>\n\n## Docker\n\n```\ndocker pull neilcampbell/conduit-localnet:<%= nextRelease.version %>\n```<% } %>"
       }
     ]
   ]

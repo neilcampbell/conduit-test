@@ -7,9 +7,9 @@ FROM debian:bullseye-slim
 LABEL org.opencontainers.image.title="Conduit LocalNet" \
       org.opencontainers.image.description="Algorand Conduit with LocalNet algod importer plugin" \
       org.opencontainers.image.vendor="Algorand Foundation" \
-      org.opencontainers.image.source="https://github.com/algorandfoundation/conduit-localnet-importer" \
+      org.opencontainers.image.source="https://github.com/neilcampbell/conduit-localnet-importer" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.documentation="https://github.com/algorandfoundation/conduit-localnet-importer/blob/main/README.md"
+      org.opencontainers.image.documentation="https://github.com/neilcampbell/conduit-localnet-importer/blob/main/README.md"
 
 # Hard code UID/GID to 999 for consistency in advanced deployments.
 # Install ca-certificates to enable using infra providers.

@@ -6,7 +6,7 @@ LDFLAGS += -X github.com/algorand/conduit/version.CompileTime=$(shell date -u +%
 LDFLAGS += -X "github.com/algorand/conduit/version.ReleaseVersion=Custom Plugin Build"
 
 # Docker image configuration
-IMAGE_NAME ?= algorandfoundation/conduit-localnet
+IMAGE_NAME ?= neilcampbell/conduit-localnet
 IMAGE_TAG ?= latest
 ARCH ?= amd64
 

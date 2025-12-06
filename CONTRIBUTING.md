@@ -58,7 +58,7 @@ Typically the easiest way to do this is build the image with the `local` tag (se
 ```yaml
 conduit:
   container_name: "algokit_sandbox_conduit"
-  image: algorandfoundation/conduit-localnet:local # The important part is the ":local" tag
+  image: neilcampbell/conduit-localnet:local # The important part is the ":local" tag
   restart: unless-stopped
   volumes:
     - type: bind
