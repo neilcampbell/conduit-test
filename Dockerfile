@@ -1,4 +1,4 @@
-# Multi-stage build for conduit with localnet importer plugin
+# Multi-stage build for conduit with LocalNet algod importer plugin
 
 # Stage 1: Build the conduit binary
 FROM debian:bullseye-slim AS builder
@@ -49,6 +49,9 @@ RUN go mod tidy && \
     cmd/conduit/main.go && \
     chmod +x conduit
 
+# Verify binary
+RUN /build/conduit -v
+
 # Clean up build cache and temporary files
 RUN go clean -cache -modcache -testcache && \
     rm -rf /root/.cache /tmp/* /var/tmp/*
@@ -57,12 +60,12 @@ RUN go clean -cache -modcache -testcache && \
 FROM debian:bullseye-slim
 
 # Metadata labels
-LABEL org.opencontainers.image.title="Conduit Localnet Importer" \
-      org.opencontainers.image.description="Algorand Conduit with localnet importer plugin for lead-based synchronization" \
-      org.opencontainers.image.vendor="MakerXStudio" \
-      org.opencontainers.image.source="https://github.com/MakerXStudio/conduit-localnet-importer" \
+LABEL org.opencontainers.image.title="Conduit LocalNet" \
+      org.opencontainers.image.description="Algorand Conduit with LocalNet algod importer plugin" \
+      org.opencontainers.image.vendor="Algorand Foundation" \
+      org.opencontainers.image.source="https://github.com/neilcampbell/conduit-localnet-importer" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.documentation="https://github.com/MakerXStudio/conduit-localnet-importer/blob/main/README.md"
+      org.opencontainers.image.documentation="https://github.com/neilcampbell/conduit-localnet-importer/blob/main/README.md"
 
 # Hard code UID/GID to 999 for consistency in advanced deployments.
 # Install ca-certificates to enable using infra providers.
@@ -85,14 +88,8 @@ COPY --from=builder --chown=root:root --chmod=755 /build/conduit /usr/local/bin/
 # Copy docker entrypoint script with ownership
 COPY --chown=root:root --chmod=755 docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
-# Verify binary
-RUN /usr/local/bin/conduit -v || true
-
 ENV CONDUIT_DATA_DIR=/data
 WORKDIR ${CONDUIT_DATA_DIR}
-
-# Expose metrics port (default for Conduit metrics)
-EXPOSE 9999
 
 # Note: docker-entrypoint.sh calls 'conduit'. Similar entrypoint scripts
 # accept the binary as the first argument in order to surface a suite of

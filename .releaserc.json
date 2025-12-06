@@ -1,0 +1,66 @@
+{
+  "branches": [
+    {
+      "name": "main",
+      "prerelease": "beta"
+    },
+    {
+      "name": "release"
+    }
+  ],
+  "plugins": [
+    [
+      "@semantic-release/commit-analyzer",
+      {
+        "preset": "conventionalcommits",
+        "releaseRules": [
+          {
+            "type": "build",
+            "release": "patch"
+          },
+          {
+            "type": "chore",
+            "release": "patch"
+          },
+          {
+            "type": "refactor",
+            "release": "patch"
+          }
+        ]
+      }
+    ],
+    [
+      "@semantic-release/release-notes-generator",
+      {
+        "preset": "conventionalcommits",
+        "presetConfig": {
+          "types": [
+            {
+              "type": "feat",
+              "section": "Features"
+            },
+            {
+              "type": "fix",
+              "section": "Bug Fixes"
+            },
+            {
+              "type": "build",
+              "section": "Dependencies and Other Build Updates",
+              "hidden": false
+            },
+            {
+              "type": "refactor",
+              "section": "Code Refactoring"
+            }
+          ]
+        }
+      }
+    ],
+    [
+      "@semantic-release/github",
+      {
+        "releaseBodyTemplate": "<%= nextRelease.notes %><% if (!nextRelease.version.includes('-')) { %>\n\n## Docker\n\n```\ndocker pull neilcampbell/conduit-localnet:<%= nextRelease.version %>\n```<% } %>"
+      }
+    ]
+  ]
+}

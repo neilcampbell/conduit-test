@@ -1,0 +1,13 @@
+{
+  "name": "conduit-localnet-importer",
+  "version": "0.0.1",
+  "description": "Algorand Conduit with localnet importer plugin for lead-based synchronization",
+  "private": true,
+  "scripts": {},
+  "author": "Algorand foundation",
+  "license": "MIT",
+  "devDependencies": {
+    "conventional-changelog-conventionalcommits": "^9.1.0",
+    "semantic-release": "^25.0.2"
+  }
+}

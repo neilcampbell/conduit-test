@@ -1,0 +1,153 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+      - release
+  workflow_dispatch:
+
+concurrency: release
+
+permissions:
+  contents: write
+  issues: read
+
+env:
+  IMAGE_NAME: neilcampbell/conduit-localnet
+
+jobs:
+  get-next-version:
+    name: Generate Release Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-next-version.outputs.new-release-version }}
+      major: ${{ steps.parse-version.outputs.major }}
+      minor: ${{ steps.parse-version.outputs.minor }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install npm dependencies
+        run: npm ci --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get next version
+        id: get-next-version
+        run: npx semantic-release --dry-run
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Parse version components
+        id: parse-version
+        run: |
+          VERSION="${{ steps.get-next-version.outputs.new-release-version }}"
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+          MINOR=$(echo "$VERSION" | cut -d. -f2)
+          echo "major=${MAJOR}" >> $GITHUB_OUTPUT
+          echo "minor=${MINOR}" >> $GITHUB_OUTPUT
+
+  publish:
+    name: Publish to Docker Hub
+    runs-on: ubuntu-latest
+    needs: get-next-version
+    if: needs.get-next-version.outputs.version != ''
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: ${{ env.IMAGE_NAME }}:${{ needs.get-next-version.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.get-next-version.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+      
+      - name: Generate Docker tags
+        id: docker-tags
+        run: |
+          VERSION="${{ needs.get-next-version.outputs.version }}"
+          MAJOR="${{ needs.get-next-version.outputs.major }}"
+          MINOR="${{ needs.get-next-version.outputs.minor }}"
+
+          TAGS="${{ env.IMAGE_NAME }}:${VERSION}"
+          echo "Tags to publish:"
+          echo "  - ${VERSION} (full semver)"
+
+          # Only add latest and shorthand tags for stable releases (no hyphen in version)
+          if [[ ! "$VERSION" =~ "-" ]]; then
+            TAGS="${TAGS},${{ env.IMAGE_NAME }}:latest"
+            echo "  - latest"
+          else
+            echo "  (prerelease detected - skipping latest tag)"
+          fi
+
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
+      
+      - name: Push Docker image to Docker Hub
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.docker-tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.version=${{ needs.get-next-version.outputs.version }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.repositoryUrl }}
+          cache-from: type=gha
+          platforms: linux/amd64,linux/arm64
+
+  release:
+    name: Create Release
+    needs: [get-next-version, publish]
+    if: needs.get-next-version.outputs.version != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install npm dependencies
+        run: npm ci --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release to GitHub
+        id: get-next-version
+        run: npx semantic-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

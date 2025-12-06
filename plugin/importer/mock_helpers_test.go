@@ -10,7 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
@@ -32,13 +31,30 @@ type mockAlgodServer struct {
 	deltas       map[uint64]*sdk.LedgerStateDelta
 
 	// Instrumentation for testing
-	mu                sync.Mutex
-	setSyncRoundCalls []setSyncRoundCall
-	setSyncRoundError error
+	mu                     sync.Mutex
+	calls                  mockCalls
+	setSyncRoundError      error
+	waitForBlockAfterError error
+	statusError            error
+}
+
+// mockCalls tracks all recorded API calls for testing
+type mockCalls struct {
+	SetSyncRound      []setSyncRoundCall
+	Status            []statusCall
+	WaitForBlockAfter []waitForBlockAfterCall
 }
 
 // setSyncRoundCall records a call to SetSyncRound
 type setSyncRoundCall struct {
+	Round uint64
+}
+
+// statusCall records a call to Status
+type statusCall struct{}
+
+// waitForBlockAfterCall records a call to WaitForBlockAfter
+type waitForBlockAfterCall struct {
 	Round uint64
 }
 
@@ -65,6 +81,17 @@ func newMockAlgodServer(t *testing.T, initialRound uint64) *mockAlgodServer {
 
 	// Status endpoint
 	mux.HandleFunc("/v2/status", func(w http.ResponseWriter, r *http.Request) {
+		// Record the call and check for error
+		mock.mu.Lock()
+		mock.calls.Status = append(mock.calls.Status, statusCall{})
+		statusErr := mock.statusError
+		mock.mu.Unlock()
+
+		if statusErr != nil {
+			http.Error(w, statusErr.Error(), http.StatusInternalServerError)
+			return
+		}
+
 		status := models.NodeStatus{
 			LastRound:   mock.currentRound.Load(),
 			LastVersion: "v1",
@@ -74,12 +101,23 @@ func newMockAlgodServer(t *testing.T, initialRound uint64) *mockAlgodServer {
 
 	// Status after block endpoint
 	mux.HandleFunc("/v2/status/wait-for-block-after/", func(w http.ResponseWriter, r *http.Request) {
-		var afterRound int64
+		var afterRound uint64
 		fmt.Sscanf(r.URL.Path, "/v2/status/wait-for-block-after/%d", &afterRound)
+
+		// Record the call and check for error
+		mock.mu.Lock()
+		mock.calls.WaitForBlockAfter = append(mock.calls.WaitForBlockAfter, waitForBlockAfterCall{Round: afterRound})
+		waitErr := mock.waitForBlockAfterError
+		mock.mu.Unlock()
+
+		if waitErr != nil {
+			http.Error(w, waitErr.Error(), http.StatusInternalServerError)
+			return
+		}
 
 		currentRound := mock.currentRound.Load()
 
-		if afterRound < 0 || uint64(afterRound) < currentRound {
+		if afterRound < currentRound {
 			status := models.NodeStatus{
 				LastRound:   currentRound,
 				LastVersion: "v1",
@@ -145,7 +183,7 @@ func newMockAlgodServer(t *testing.T, initialRound uint64) *mockAlgodServer {
 
 		// Record the call and check for error
 		mock.mu.Lock()
-		mock.setSyncRoundCalls = append(mock.setSyncRoundCalls, setSyncRoundCall{
+		mock.calls.SetSyncRound = append(mock.calls.SetSyncRound, setSyncRoundCall{
 			Round: targetRound,
 		})
 		syncErr := mock.setSyncRoundError
@@ -194,25 +232,41 @@ func (m *mockAlgodServer) setRound(round uint64) {
 	m.currentRound.Store(round)
 }
 
+// setWaitForBlockAfterError sets an error to be returned by the wait-for-block-after endpoint
+func (m *mockAlgodServer) setWaitForBlockAfterError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.waitForBlockAfterError = err
+}
+
+// setStatusError sets an error to be returned by the status endpoint
+func (m *mockAlgodServer) setStatusError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.statusError = err
+}
+
 // close shuts down the mock server
 func (m *mockAlgodServer) close() {
 	m.server.Close()
 }
 
-// getSyncRoundCalls returns a copy of all SetSyncRound calls
-func (m *mockAlgodServer) getSyncRoundCalls() []setSyncRoundCall {
+// getCalls returns a copy of all recorded API calls
+func (m *mockAlgodServer) getCalls() mockCalls {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	calls := make([]setSyncRoundCall, len(m.setSyncRoundCalls))
-	copy(calls, m.setSyncRoundCalls)
-	return calls
+	return mockCalls{
+		SetSyncRound:      append([]setSyncRoundCall{}, m.calls.SetSyncRound...),
+		Status:            append([]statusCall{}, m.calls.Status...),
+		WaitForBlockAfter: append([]waitForBlockAfterCall{}, m.calls.WaitForBlockAfter...),
+	}
 }
 
-// clearSyncRoundCalls clears the SetSyncRound call history
-func (m *mockAlgodServer) clearSyncRoundCalls() {
+// clearCalls clears all recorded API call history
+func (m *mockAlgodServer) clearCalls() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.setSyncRoundCalls = nil
+	m.calls = mockCalls{}
 }
 
 // createTestGenesis creates a test genesis block
@@ -264,11 +318,10 @@ func createTestDelta(round uint64) *sdk.LedgerStateDelta {
 // createTestConfig creates a valid test configuration and returns it as a JSON string
 func createTestConfig(leadURL, followerURL string) string {
 	cfg := map[string]interface{}{
-		"lead-node-url":           leadURL,
-		"follower-node-url":       followerURL,
-		"token":                   "test-token",
-		"lead-node-poll-interval": "50ms",
-		"wait-for-round-timeout":  "5s",
+		"lead-node-url":          leadURL,
+		"follower-node-url":      followerURL,
+		"token":                  "test-token",
+		"wait-for-round-timeout": "5s",
 	}
 	cfgBytes, _ := json.Marshal(cfg)
 	return string(cfgBytes)
@@ -277,10 +330,9 @@ func createTestConfig(leadURL, followerURL string) string {
 // createTestConfigWithTokens creates a test configuration with specific tokens
 func createTestConfigWithTokens(leadURL, followerURL, token, leadToken, followerToken string) string {
 	cfg := map[string]interface{}{
-		"lead-node-url":           leadURL,
-		"follower-node-url":       followerURL,
-		"lead-node-poll-interval": "50ms",
-		"wait-for-round-timeout":  "5s",
+		"lead-node-url":          leadURL,
+		"follower-node-url":      followerURL,
+		"wait-for-round-timeout": "5s",
 	}
 	if token != "" {
 		cfg["token"] = token
@@ -290,19 +342,6 @@ func createTestConfigWithTokens(leadURL, followerURL, token, leadToken, follower
 	}
 	if followerToken != "" {
 		cfg["follower-node-token"] = followerToken
-	}
-	cfgBytes, _ := json.Marshal(cfg)
-	return string(cfgBytes)
-}
-
-// createTestConfigWithPollInterval creates a test configuration with custom poll interval
-func createTestConfigWithPollInterval(leadURL, followerURL string, pollInterval time.Duration) string {
-	cfg := map[string]interface{}{
-		"lead-node-url":           leadURL,
-		"follower-node-url":       followerURL,
-		"token":                   "test-token",
-		"lead-node-poll-interval": pollInterval.String(),
-		"wait-for-round-timeout":  "5s",
 	}
 	cfgBytes, _ := json.Marshal(cfg)
 	return string(cfgBytes)
@@ -323,13 +362,14 @@ func requireMockServers(t *testing.T, leadRound, followerRound uint64) (lead *mo
 	return lead, follower
 }
 
-// setupTestImporter creates an importer and immediately stops the polling goroutine
+// setupTestImporter creates an importer for testing
 func setupTestImporter(t *testing.T, lead, follower *mockAlgodServer) *localnetImporter {
 	t.Helper()
 
 	cfgStr := createTestConfig(lead.server.URL, follower.server.URL)
 
 	importer := &localnetImporter{}
+	importer.leadRound.Store(lead.currentRound.Load())
 	logger := logrus.New()
 	logger.SetLevel(logrus.ErrorLevel)
 
@@ -340,38 +380,11 @@ func setupTestImporter(t *testing.T, lead, follower *mockAlgodServer) *localnetI
 	err := importer.Init(ctx, conduit.MakePipelineInitProvider(&pipelineRound, nil, nil), plugins.MakePluginConfig(cfgStr), logger)
 	require.NoError(t, err)
 
-	if importer.pollingCancel != nil {
-		importer.pollingCancel()
-		importer.pollingWg.Wait()
-	}
-
-	// Initialize lead state to match the lead server's current round
-	// This simulates what would have happened if the polling goroutine had run
-	setLeadRound(importer, lead.currentRound.Load())
-
 	t.Cleanup(func() {
 		importer.Close()
 	})
 
 	return importer
-}
-
-// setLeadRound manually sets the lead state
-func setLeadRound(importer *localnetImporter, round uint64) {
-	importer.leadState.Store(leadNodeState{
-		Round:     round,
-		Timestamp: time.Now().UTC(),
-	})
-}
-
-// sendLeadSignal manually sends a signal
-func sendLeadSignal(importer *localnetImporter, round uint64) {
-	select {
-	case importer.syncSignal <- round:
-	default:
-		<-importer.syncSignal
-		importer.syncSignal <- round
-	}
 }
 
 // newIPv4HTTPServer starts an httptest.Server bound to IPv4 loopback

@@ -4,11 +4,12 @@
 FROM debian:bullseye-slim
 
 # Metadata labels
-LABEL org.opencontainers.image.title="Conduit Localnet Importer" \
-      org.opencontainers.image.description="Algorand Conduit with localnet importer plugin for lead-based synchronization" \
-      org.opencontainers.image.vendor="MakerXStudio" \
-      org.opencontainers.image.source="https://github.com/MakerXStudio/conduit-localnet-importer" \
-      org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.title="Conduit LocalNet" \
+      org.opencontainers.image.description="Algorand Conduit with LocalNet algod importer plugin" \
+      org.opencontainers.image.vendor="Algorand Foundation" \
+      org.opencontainers.image.source="https://github.com/neilcampbell/conduit-localnet-importer" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.documentation="https://github.com/neilcampbell/conduit-localnet-importer/blob/main/README.md"
 
 # Hard code UID/GID to 999 for consistency in advanced deployments.
 # Install ca-certificates to enable using infra providers.
@@ -28,8 +29,5 @@ COPY ./docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 ENV CONDUIT_DATA_DIR=/data
 WORKDIR /data
-
-# Expose metrics port (default for Conduit metrics)
-EXPOSE 9999
 
 ENTRYPOINT ["docker-entrypoint.sh"]
