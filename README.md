@@ -1,14 +1,18 @@
-# Conduit Localnet Importer
+# Conduit LocalNet Importer
 
-A standalone [Conduit](https://github.com/algorand/conduit) importer plugin optimized for localnet performance using lead-based synchronization.
+A standalone [Conduit](https://github.com/algorand/conduit) importer plugin optimized for LocalNet using lead-based synchronization.
 
 ## Overview
 
-This plugin provides a specialized importer for Algorand localnet environments that uses a "follow the leader" approach:
+The AlgoKit LocalNet environment leverages the algod DevMode feature (by default), which produces blocks as soon as transaction are available in the mempool. Additionally if transactions are not available, no blocks are produced. This behaviour is incredibly useful for fast feedback when developing and testing, however is different to a regular network.
 
-- **Lead-based sync**: Continuously polls a lead (primary) algod node to track block production
-- **Optimized for localnet**: Designed for high-performance localnet environments
-- **Follower mode only**: Operates exclusively in follower mode with state deltas enabled
+This difference in behaviour causes syncing delays into the indexer instance, as block production isn't predictable. This creates automated test timing determinism issues and ultimately slows down tests that depend on transactions being available in the indexer.
+
+To ensure a predictable indexer syncing experience, this LocalNet specific algod importer plugin was created, which features:
+
+- **Lead-based sync**: Tracks block production on the lead (primary) algod node to determine when to sync, ensuring no sync delays.
+- **Optimized for LocalNet DevMode**: Designed for the default LocalNet configuration, which has a high block production throughput. Whilst optimised for DevMode, it still works fine in non DevMode.
+- **Follower mode only**: Operates exclusively in follower mode with state deltas enabled.
 
 ## How It Works
 
@@ -51,7 +55,7 @@ sequenceDiagram
 
 ## Configuration
 
-The localnet importer requires two algod nodes:
+The LocalNet importer requires two algod nodes:
 
 1. **Lead node**: The primary node that generates blocks
 2. **Follower node**: A follower-mode node that syncs to the lead
@@ -78,31 +82,23 @@ Tokens are optional. If your nodes require authentication, you have three option
    - Set `token` as default
    - Optionally override with `follower-node-token` and/or `lead-node-token`
 
-### Optional Configuration
-
-- `lead-node-poll-interval`: How often to poll the lead node for status (default: 100ms, max: 60s)
-- `wait-for-round-timeout`: Max time to wait for lead to reach a round (default: 0 = no timeout)
-
 ### Example Configuration
 
-Initialize conduit with the localnet importer:
+Initialize conduit with the LocalNet importer:
 
 ```bash
-./conduit init --importer localnet_algod_importer -d conduit_data
+./conduit init --importer localnet_algod -d conduit_data
 ```
 
 Edit `conduit_data/conduit.yml` and configure the importer section:
 
 ```yaml
 importer:
-  name: localnet_algod_importer
+  name: localnet_algod
   config:
     lead-node-url: "http://localhost:8080"
     follower-node-url: "http://localhost:8081"
     token: "your-token"
-    # Optional configuration:
-    # lead-node-poll-interval: "100ms"
-    # wait-for-round-timeout: "0s"
 ```
 
 Start conduit:

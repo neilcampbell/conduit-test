@@ -1,4 +1,4 @@
-name: localnet_algod_importer
+name: localnet_algod
 config:
     # Lead node URL (source of truth - producing blocks)
     lead-node-url: "http://localhost:8080"
@@ -14,12 +14,3 @@ config:
 
     # Lead node API token (optional, overrides 'token' for lead node)
     # lead-node-token: "your-lead-specific-token"
-
-    # How often to poll the lead node for status updates (default: 100ms)
-    # This is used for monitoring lead position only
-    # lead-node-poll-interval: 100ms
-
-    # Maximum time to wait for lead/follower nodes to reach a requested round
-    # Default: 0s (wait indefinitely - recommended for localnet)
-    # Set to "30s" or similar for production safety (detects stalled nodes)
-    # wait-for-round-timeout: "0s"

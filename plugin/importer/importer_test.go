@@ -122,31 +122,6 @@ func TestImporterInitNoToken(t *testing.T) {
 	defer importer.Close()
 }
 
-func TestImporterInitInvalidTimings(t *testing.T) {
-	t.Parallel()
-
-	lead, follower := requireMockServers(t, 10, 5)
-	cfg := map[string]interface{}{
-		"lead-node-url":           lead.server.URL,
-		"follower-node-url":       follower.server.URL,
-		"token":                   "test-token",
-		"lead-node-poll-interval": "61s",
-		"wait-for-round-timeout":  "5s",
-	}
-	cfgBytes, _ := json.Marshal(cfg)
-	cfgStr := string(cfgBytes)
-
-	importer := &localnetImporter{}
-	logger := logrus.New()
-	logger.SetLevel(logrus.ErrorLevel)
-
-	ctx := context.Background()
-	pipelineRound := sdk.Round(0)
-	err := importer.Init(ctx, conduit.MakePipelineInitProvider(&pipelineRound, nil, nil), plugins.MakePluginConfig(cfgStr), logger)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "lead-node-poll-interval must be")
-}
-
 func TestImporterGetBlock(t *testing.T) {
 	t.Parallel()
 
@@ -247,33 +222,19 @@ func TestWaitForRoundWithTimeoutStatusFailure(t *testing.T) {
 	assert.Contains(t, err.Error(), "unable to get status after block and status")
 }
 
-func TestGetBlockWaitsForLead(t *testing.T) {
-	t.Parallel()
-
-	lead, follower := requireMockServers(t, 10, 10)
-	importer := setupTestImporter(t, lead, follower)
-
-	sendLeadSignal(importer, 15)
-	lead.setRound(15)
-
-	block, err := importer.GetBlock(15)
-	require.NoError(t, err)
-	assert.Equal(t, uint64(15), block.Round())
-}
-
-func TestGetBlockCallsSetSyncRound(t *testing.T) {
+func TestImporterGetBlockCallsSetSyncRound(t *testing.T) {
 	t.Parallel()
 
 	lead, follower := requireMockServers(t, 20, 10)
 	importer := setupTestImporter(t, lead, follower)
 
-	follower.clearSyncRoundCalls()
+	follower.clearCalls()
 
 	block, err := importer.GetBlock(15)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(15), block.Round())
 
-	calls := follower.getSyncRoundCalls()
+	calls := follower.getCalls().SetSyncRound
 	require.GreaterOrEqual(t, len(calls), 1, "SetSyncRound should have been called")
 	assert.Equal(t, uint64(15), calls[len(calls)-1].Round, "SetSyncRound should be called with requested round")
 }
@@ -287,30 +248,105 @@ func TestOnCompleteAdvancesFollower(t *testing.T) {
 	block, err := importer.GetBlock(15)
 	require.NoError(t, err)
 
-	follower.clearSyncRoundCalls()
+	follower.clearCalls()
 
 	err = importer.OnComplete(block)
 	require.NoError(t, err)
 
-	calls := follower.getSyncRoundCalls()
+	calls := follower.getCalls().SetSyncRound
 	require.Len(t, calls, 1, "OnComplete should call SetSyncRound once")
 	assert.Equal(t, uint64(16), calls[0].Round, "OnComplete should call SetSyncRound with round+1")
 }
 
-func TestWaitForLeadTimeout(t *testing.T) {
+func TestImporterGetBlockLeadWaitTimeoutRetries(t *testing.T) {
+	t.Parallel()
+
+	lead, follower := requireMockServers(t, 5, 5)
+	importer := setupTestImporter(t, lead, follower)
+
+	// After a few WaitForBlockAfter calls, advance the lead
+	go func() {
+		for {
+			calls := lead.getCalls()
+			if len(calls.WaitForBlockAfter) >= 5 {
+				lead.setRound(15)
+				return
+			}
+		}
+	}()
+
+	block, err := importer.GetBlock(10)
+
+	require.NoError(t, err)
+	assert.Equal(t, uint64(10), block.Round())
+	leadCalls := lead.getCalls()
+	assert.GreaterOrEqual(t, len(leadCalls.WaitForBlockAfter), 5, "Lead should have been polled multiple times due to retries")
+}
+
+func TestImporterGetBlockLeadWaitFailureThrows(t *testing.T) {
+	t.Parallel()
+
+	lead, follower := requireMockServers(t, 5, 20)
+	importer := setupTestImporter(t, lead, follower)
+
+	lead.setWaitForBlockAfterError(errors.New("connection refused"))
+	lead.setStatusError(errors.New("connection refused"))
+
+	_, err := importer.GetBlock(10)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to get status after block and status")
+}
+
+func TestImporterGetBlockFollowerWaitTimeoutThrows(t *testing.T) {
+	t.Parallel()
+
+	lead, follower := requireMockServers(t, 10, 5)
+	importer := setupTestImporter(t, lead, follower)
+	importer.waitForRoundTimeout = 0 * time.Millisecond // Ensures immediate timeout
+
+	_, err := importer.GetBlock(10)
+
+	require.Error(t, err)
+	var syncErr *SyncError
+	require.True(t, errors.As(err, &syncErr), "error should be a SyncError")
+}
+
+func TestImporterGetBlockFollowerWaitFailureThrows(t *testing.T) {
+	t.Parallel()
+
+	lead, follower := requireMockServers(t, 20, 20)
+	importer := setupTestImporter(t, lead, follower)
+
+	follower.setWaitForBlockAfterError(errors.New("connection refused"))
+	follower.setStatusError(errors.New("connection refused"))
+
+	_, err := importer.GetBlock(10)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to get status after block and status")
+}
+
+func TestImporterGetBlockWaitForLeadThenFollower(t *testing.T) {
 	t.Parallel()
 
 	lead, follower := requireMockServers(t, 10, 10)
 	importer := setupTestImporter(t, lead, follower)
+	lead.setRound(20)
 
-	importer.waitForRoundTimeout = 1 * time.Millisecond
-
-	_, err := importer.GetBlock(100)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "timeout waiting for lead to reach round")
+	block, err := importer.GetBlock(15)
+	require.NoError(t, err)
+	assert.Equal(t, uint64(15), block.Round())
+	leadCalls := lead.getCalls()
+	followerCalls := follower.getCalls()
+	require.Len(t, leadCalls.WaitForBlockAfter, 1, "Follower should have 1 WaitForBlockAfter calls")
+	assert.Equal(t, leadCalls.WaitForBlockAfter[0].Round, uint64(14), "WaitForBlockAfter should be called for round 15") // 14 as it's round after, which is 15
+	require.Len(t, followerCalls.WaitForBlockAfter, 1, "Should have no WaitForBlockAfter calls")
+	assert.Equal(t, followerCalls.WaitForBlockAfter[0].Round, uint64(14), "WaitForBlockAfter should be called for round 15") // 14 as it's round after, which is 15
+	assert.Equal(t, importer.leadRound.Load(), uint64(20), "leadRound should be updated to 20")
 }
 
-func TestWaitForLeadFastPath(t *testing.T) {
+func TestImporterGetBlockWaitForFollower(t *testing.T) {
 	t.Parallel()
 
 	lead, follower := requireMockServers(t, 20, 10)
@@ -319,15 +355,21 @@ func TestWaitForLeadFastPath(t *testing.T) {
 	block, err := importer.GetBlock(15)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(15), block.Round())
+	leadCalls := lead.getCalls()
+	followerCalls := follower.getCalls()
+	require.Len(t, leadCalls.WaitForBlockAfter, 0, "Follower should have 0 WaitForBlockAfter calls")
+	require.Len(t, followerCalls.WaitForBlockAfter, 1, "Should have no WaitForBlockAfter calls")
+	assert.Equal(t, followerCalls.WaitForBlockAfter[0].Round, uint64(14), "WaitForBlockAfter should be called for round 15") // 14 as it's round after, which is 15
+	assert.Equal(t, importer.leadRound.Load(), uint64(20), "leadRound remains at 20")
 }
 
-func TestGetBlockAndOnCompleteFlow(t *testing.T) {
+func TestImporterGetBlockAndOnCompleteFlow(t *testing.T) {
 	t.Parallel()
 
 	lead, follower := requireMockServers(t, 20, 5)
-	importer := setupTestImporter(t, lead, follower)
 
-	follower.clearSyncRoundCalls()
+	importer := setupTestImporter(t, lead, follower)
+	follower.clearCalls()
 
 	for round := uint64(10); round <= 12; round++ {
 		block, err := importer.GetBlock(round)
@@ -338,7 +380,7 @@ func TestGetBlockAndOnCompleteFlow(t *testing.T) {
 		require.NoError(t, err, "OnComplete(%d) should succeed", round)
 	}
 
-	calls := follower.getSyncRoundCalls()
+	calls := follower.getCalls().SetSyncRound
 
 	require.GreaterOrEqual(t, len(calls), 6, "Should have SetSyncRound calls for GetBlock and OnComplete")
 
