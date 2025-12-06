@@ -10,18 +10,6 @@ IMAGE_NAME ?= neilcampbell/conduit-localnet
 IMAGE_TAG ?= latest
 ARCH ?= amd64
 
-
-- name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: ./resources/mock-server
-          push: true
-          tags: |
-            ${{ env.IMAGE }}:latest
-            ${{ env.IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          platforms: linux/amd64,linux/arm64
 conduit:
 	go build -ldflags='${LDFLAGS}' -o conduit cmd/conduit/main.go
 	./conduit -v
