@@ -12,6 +12,7 @@ concurrency: release
 permissions:
   contents: write
   issues: read
+  packages: write
 
 env:
   IMAGE_NAME: neilcampbell/conduit-localnet
@@ -47,6 +48,7 @@ jobs:
       - name: Debug outputs
         run: |
           echo "Version: ${{ steps.get-next-version.outputs.new-release-version }}"
+          echo "${{ toJSON(steps.get-next-version.outputs) }}"
 
   publish:
     name: Publish to Docker Hub
