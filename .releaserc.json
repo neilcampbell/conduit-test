@@ -61,6 +61,12 @@
       {
         "releaseBodyTemplate": "<%= nextRelease.notes %><% if (!nextRelease.version.includes('-')) { %>\n\n## Docker\n\n```\ndocker pull neilcampbell/conduit-localnet:<%= nextRelease.version %>\n```<% } %>"
       }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "verifyReleaseCmd": "echo \"new-release-version=${nextRelease.version}\" >> $GITHUB_OUTPUT"
+      }
     ]
   ]
 }
